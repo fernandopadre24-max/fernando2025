@@ -1,0 +1,214 @@
+
+'use client';
+
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { BankAccount, PaymentMethod, Artist, Contractor, Category } from '@/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useMemo } from 'react';
+
+const movementSchema = z.object({
+  value: z.coerce.number().positive('O valor deve ser positivo.'),
+  description: z.string().min(1, 'A descrição é obrigatória.'),
+  date: z.string().min(1, 'A data é obrigatória.'),
+  paymentMethod: z.nativeEnum(PaymentMethod).nullable(),
+  pixKey: z.string().optional().nullable(),
+  paidTo: z.string().optional().nullable(),
+  artistId: z.string().optional().nullable(),
+  contractorId: z.string().optional().nullable(),
+  categoryId: z.string().optional().nullable(),
+});
+
+export type MovementFormData = z.infer<typeof movementSchema>;
+
+interface MovementFormProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (data: MovementFormData) => void;
+  account: BankAccount;
+  type: 'deposit' | 'withdrawal';
+  artists: Artist[];
+  contractors: Contractor[];
+  categories: Category[];
+}
+
+export function MovementForm({ 
+    isOpen, 
+    onClose, 
+    onSave, 
+    account, 
+    type,
+    artists,
+    contractors,
+    categories
+}: MovementFormProps) {
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    formState: { errors },
+  } = useForm<MovementFormData>({
+    resolver: zodResolver(movementSchema),
+    defaultValues: {
+      value: 0,
+      description: '',
+      date: new Date().toISOString().split('T')[0],
+      paymentMethod: null,
+      pixKey: '',
+      paidTo: '',
+      artistId: null,
+      contractorId: null,
+      categoryId: null,
+    },
+  });
+
+  const paymentMethod = watch('paymentMethod');
+  
+  const filteredCategories = useMemo(() => {
+    const transactionType = type === 'deposit' ? 'Receita' : 'Despesa';
+    return categories.filter(c => c.type === transactionType);
+  }, [categories, type]);
+
+  const onSubmit = (data: MovementFormData) => {
+    onSave(data);
+  };
+  
+  const title = type === 'deposit' ? 'Registrar Depósito' : 'Registrar Retirada';
+  const description = `Realize um ${type === 'deposit' ? 'depósito' : 'retirada'} na conta ${account.bankName} - ${account.accountNumber}.`;
+
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+                <Label htmlFor="value">Valor</Label>
+                <Input id="value" type="number" step="0.01" {...register('value')} />
+                {errors.value && <p className="text-sm text-red-500">{errors.value.message}</p>}
+            </div>
+             <div className="space-y-2">
+                <Label htmlFor="date">Data</Label>
+                <Input id="date" type="date" {...register('date')} />
+                {errors.date && <p className="text-sm text-red-500">{errors.date.message}</p>}
+            </div>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="description">Descrição</Label>
+            <Input id="description" {...register('description')} />
+            {errors.description && <p className="text-sm text-red-500">{errors.description.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Forma de Pagamento</Label>
+              <Controller name="paymentMethod" control={control} render={({ field }) => (
+                  <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="PIX">PIX</SelectItem>
+                      <SelectItem value="Dinheiro">Dinheiro</SelectItem>
+                      <SelectItem value="Cartão">Cartão</SelectItem>
+                  </SelectContent>
+                  </Select>
+              )} />
+            </div>
+             <div className="space-y-2">
+              <Label>Categoria</Label>
+              <Controller
+                  name="categoryId"
+                  control={control}
+                  render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value || ''} defaultValue={field.value || ''}>
+                      <SelectTrigger>
+                      <SelectValue placeholder="Selecione uma categoria" />
+                      </SelectTrigger>
+                      <SelectContent>
+                      {filteredCategories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                          {cat.name}
+                          </SelectItem>
+                      ))}
+                      </SelectContent>
+                  </Select>
+                  )}
+              />
+            </div>
+          </div>
+
+
+          {paymentMethod === 'PIX' && (
+            <div className="space-y-2">
+              <Label htmlFor="pixKey">Chave PIX</Label>
+              <Input id="pixKey" {...register('pixKey')} />
+            </div>
+          )}
+
+          {type === 'withdrawal' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Pago para (Artista)</Label>
+                    <Controller name="artistId" control={control} render={({ field }) => (
+                      <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                      <SelectTrigger><SelectValue placeholder="Selecione o artista" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="other">Outro / Não se aplica</SelectItem>
+                        {artists.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                      </Select>
+                    )} />
+                </div>
+                <div className="space-y-2">
+                    <Label htmlFor="paidTo">Outro (opcional)</Label>
+                    <Input id="paidTo" {...register('paidTo')} placeholder="Especifique..."/>
+                </div>
+              </div>
+          )}
+
+          {type === 'deposit' && (
+              <div className="space-y-2">
+                  <Label>Recebido de (Contratante)</Label>
+                  <Controller name="contractorId" control={control} render={({ field }) => (
+                      <Select onValueChange={field.onChange} defaultValue={field.value || ''}>
+                      <SelectTrigger><SelectValue placeholder="Selecione o contratante" /></SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="other">Outro / Não se aplica</SelectItem>
+                          {contractors.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                      </SelectContent>
+                      </Select>
+                  )} />
+              </div>
+          )}
+          
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button type="submit">Salvar</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
